@@ -51,6 +51,7 @@ The system must be:
 - No authentication
 - No backend form processing
 - Must run as static site
+- Analytics: client-side only (scripts send events to external services; no backend or DB for analytics)
 
 ---
 
@@ -198,6 +199,35 @@ Do not use `/project`, `/projects/:id`, or other variants.
 
 ---
 
+### 4.7 DATA ANALYTICS
+
+**Purpose:** Enable post-deployment visibility into website traffic and stats (page views, referrers, devices, top pages, optional custom events). All analytics are client-side only; no backend or database in the repo.
+
+**Constraint:** Static export and "no backend" mean analytics must be client-side: a script sends events to an external service; the owner views stats in that service’s dashboard.
+
+**Stack (single source of truth):**
+
+- **Traffic and behavior:** Google Analytics 4 (GA4). Free. Provides: page views, unique visitors, sessions, bounce rate; acquisition (referrers, source/medium); behavior (top pages, flow); audience (countries, devices, browsers).
+- **Optional:** Vercel Analytics (`@vercel/analytics`). Free on Vercel. Provides: Web Vitals (LCP, FID, CLS), page view counts in Vercel dashboard.
+- **Environment:** One public env var: `NEXT_PUBLIC_GA_MEASUREMENT_ID` (format `G-XXXXXXXXXX`). Load GA script only when this is set so dev/local runs without GA.
+
+**Required implementation:**
+
+- **Root layout** (`src/app/layout.tsx`): Include GA script injection conditional on `NEXT_PUBLIC_GA_MEASUREMENT_ID`. Use Next.js `Script` with `strategy="afterInteractive"` (or `lazyOnload`) so analytics do not block initial paint.
+- **Page views:** Send GA4 `page_view` on route change and on mount. Use a client component that calls `usePathname()` and in a `useEffect` sends `gtag('event', 'page_view', { page_path: pathname })` when pathname changes. Rendered once from root layout. Covers: `/`, `/projects`, `/projects/[slug]`, `/engineering`, `/resume`, `/contact`.
+- **Files:** Script init and injection in a dedicated component (e.g. `src/components/GoogleAnalytics.tsx`) or `src/lib/gtag.ts` plus a small layout component; page-view logic in a client component (e.g. `src/components/AnalyticsPageView.tsx`). No server components or API routes; compatible with `output: 'export'`.
+
+**Optional implementation:**
+
+- **Vercel Analytics:** Add `@vercel/analytics` and render `<Analytics />` in root layout.
+- **Custom events:** Resume download: on download button click, send `gtag('event', 'resume_download')`. CTAs: optional events for "View Projects", "Download Resume", "Contact". Outbound links: optional utility (e.g. `src/lib/analytics.ts`) with `trackOutboundClick(url)` / `trackEvent(name, params)` for GitHub, LinkedIn, mailto clicks.
+
+**Documentation:** Setup and env are documented in [docs/ANALYTICS.md](docs/ANALYTICS.md). README or deployment notes must mention setting `NEXT_PUBLIC_GA_MEASUREMENT_ID` in Vercel (and optionally enabling Vercel Analytics in project settings).
+
+**Done when:** GA4 script loads when env is set; page_view fires on every route change and mount; stats are visible in GA4 report after deployment; optional Vercel Analytics and custom events implemented if specified; docs/ANALYTICS.md and env reference in README exist.
+
+---
+
 ## 5. FOLDER STRUCTURE
 
 ```
@@ -229,7 +259,9 @@ portfolio/
 │   │   ├── ProjectCard.tsx
 │   │   ├── ProofStrip.tsx
 │   │   ├── CTASection.tsx
-│   │   └── TagBadge.tsx
+│   │   ├── TagBadge.tsx
+│   │   ├── GoogleAnalytics.tsx
+│   │   └── AnalyticsPageView.tsx
 │   ├── content/
 │   │   └── projects/
 │   │       ├── enterprise-content-pipeline.mdx
@@ -237,10 +269,16 @@ portfolio/
 │   │       └── admin-dashboard-redesign.mdx
 │   ├── lib/
 │   │   ├── getProjects.ts
-│   │   └── mdxUtils.ts
+│   │   ├── mdxUtils.ts
+│   │   └── analytics.ts
 │   └── styles/
 │       └── globals.css
 │
+├── docs/
+│   ├── TECHNICAL_SPECIFICATION.md
+│   ├── NOTION_SETUP.md
+│   └── ANALYTICS.md
+├── .env.example
 ├── tailwind.config.ts
 ├── next.config.js
 ├── package.json
@@ -303,14 +341,19 @@ flowchart LR
     Projects[Projects list + detail]
     Other[Engineering, Resume, Contact]
   end
-  phase1 --> phase2 --> phase3
+  subgraph phase4 [Phase 4]
+    Analytics[GA4 + PageView + optional Vercel]
+  end
+  phase1 --> phase2 --> phase3 --> phase4
   Lib --> Projects
   Content --> Projects
+  Layout --> Analytics
 ```
 
 - **Phase 1:** Layout, Navbar, Footer, `globals.css`, Tailwind theme (accent, neutrals).
 - **Phase 2:** `lib/getProjects.ts`, `lib/mdxUtils.ts`, 1–2 sample MDX files with full metadata.
 - **Phase 3:** Home (hero, proof strip, featured projects, philosophy, footer), then `/projects`, `/projects/[slug]`, then `/engineering`, `/resume`, `/contact`.
+- **Phase 4:** Data analytics: GA4 script and init (conditional on `NEXT_PUBLIC_GA_MEASUREMENT_ID`), AnalyticsPageView client component, optional Vercel Analytics and custom events; `docs/ANALYTICS.md` and `.env.example`.
 
 ---
 
@@ -342,6 +385,7 @@ flowchart LR
 - Keep MDX content structured
 - Use fixed section heading order on project detail pages (see §4.3)
 - **Sitemap:** Generate static `sitemap.xml` for `/`, `/projects`, `/projects/[slug]`, `/engineering`, `/resume`, `/contact` (e.g. from `getProjects()` + static routes) for discovery and SEO
+- **Analytics:** See §4.7 for data analytics (GA4, optional Vercel Analytics); implementation and env in [docs/ANALYTICS.md](docs/ANALYTICS.md)
 
 ---
 
@@ -356,3 +400,4 @@ flowchart LR
 | Project detail | Single MDX renders with all 7 sections in order; diagram has `alt` text |
 | Resume | PDF visible in-browser; download button; 3–5 bullet summary above or beside |
 | Contact | Only mailto, LinkedIn, GitHub; no form, no API |
+| Data analytics | GA4 script loads when `NEXT_PUBLIC_GA_MEASUREMENT_ID` set; page_view on route change/mount; stats visible in GA4 after deploy; optional Vercel Analytics/custom events per spec; docs/ANALYTICS.md and env in README |
