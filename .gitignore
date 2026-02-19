@@ -1,0 +1,7 @@
+# Dependencies
+node_modules/
+
+# Build / Next (when you add the app)
+.next/
+out/
+.vercel/
